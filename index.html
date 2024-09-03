@@ -6,20 +6,83 @@
     <title>角色升级材料计算器 (Debug)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
     <style>
-        /* 保持原有的样式 */
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .input-group, #debug-info {
+            margin-bottom: 20px;
+        }
+        #characterInput, #characterSelect {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+        }
+        #suggestions {
+            list-style-type: none;
+            padding: 0;
+            margin-top: 5px;
+        }
+        #suggestions li {
+            cursor: pointer;
+            padding: 5px;
+        }
+        #suggestions li:hover {
+            background-color: #f0f0f0;
+        }
+        #selectedCharacters, #debug-info {
+            margin-top: 20px;
+        }
+        #debug-info {
+            background-color: #f0f0f0;
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
     </style>
 </head>
 <body>
-    <!-- 保持原有的HTML结构 -->
+    <h1>角色升级材料计算器 (强化错误处理版)</h1>
+    
+    <div class="input-group">
+        <label for="characterInput">输入角色名称：</label>
+        <input type="text" id="characterInput" placeholder="输入角色名称">
+        <ul id="suggestions"></ul>
+    </div>
+    
+    <div class="input-group">
+        <label for="characterSelect">或从列表中选择：</label>
+        <select id="characterSelect">
+            <option value="">-- 选择角色 --</option>
+        </select>
+    </div>
+    
+    <div id="selectedCharacters">
+        <h2>已选择的角色：</h2>
+        <ul id="characterList"></ul>
+    </div>
+
+    <div id="debug-info">
+        <h2>调试信息：</h2>
+        <p>数据库状态: <span id="db-status">未加载</span></p>
+        <p>角色数量: <span id="character-count">0</span></p>
+        <p>最后的错误: <span id="last-error">无</span></p>
+    </div>
 
     <script>
         let characters = [];
         let selectedCharacters = [];
 
         function updateDebugInfo(dbStatus, characterCount, lastError = "无") {
-            document.getElementById('db-status').textContent = dbStatus;
-            document.getElementById('character-count').textContent = characterCount;
-            document.getElementById('last-error').textContent = lastError;
+            const dbStatusElement = document.getElementById('db-status');
+            const characterCountElement = document.getElementById('character-count');
+            const lastErrorElement = document.getElementById('last-error');
+
+            if (dbStatusElement) dbStatusElement.textContent = dbStatus;
+            if (characterCountElement) characterCountElement.textContent = characterCount;
+            if (lastErrorElement) lastErrorElement.textContent = lastError;
+
             console.log(`调试信息更新 - 状态: ${dbStatus}, 角色数: ${characterCount}, 错误: ${lastError}`);
         }
 
@@ -27,7 +90,7 @@
             console.log("开始加载数据库");
             updateDebugInfo("正在加载", 0);
             var xhr = new XMLHttpRequest();
-            xhr.open('GET', 'db/characters.db', true);  // 更新为您的实际文件路径
+            xhr.open('GET', 'database.sqlite', true);  // 请确保这是正确的文件路径
             xhr.responseType = 'arraybuffer';
 
             xhr.onload = function(e) {
@@ -46,8 +109,8 @@
                         try {
                             var db = new SQL.Database(uInt8Array);
                             console.log("数据库实例创建成功");
-                            var contents = db.exec("SELECT name FROM sqlite_master WHERE type='table';");
-                            console.log("数据库表:", contents);
+                            var tables = db.exec("SELECT name FROM sqlite_master WHERE type='table';");
+                            console.log("数据库表:", tables);
                             var contents = db.exec("SELECT character FROM characters");
                             console.log("查询执行结果:", contents);
                             if (contents.length > 0 && contents[0].values) {
@@ -79,8 +142,84 @@
             xhr.send();
         }
 
-        // 其余函数保持不变
-        
+        function initializeCharacterList() {
+            console.log("初始化角色列表");
+            const select = document.getElementById('characterSelect');
+            if (select) {
+                select.innerHTML = '<option value="">-- 选择角色 --</option>';
+                characters.forEach(character => {
+                    const option = document.createElement('option');
+                    option.value = character;
+                    option.textContent = character;
+                    select.appendChild(option);
+                });
+                console.log("角色列表初始化完成，总数:", characters.length);
+            } else {
+                console.error("无法找到角色选择下拉框元素");
+            }
+        }
+
+        // 输入建议功能
+        const characterInput = document.getElementById('characterInput');
+        if (characterInput) {
+            characterInput.addEventListener('input', function(e) {
+                const input = e.target.value.toLowerCase();
+                const suggestions = characters.filter(char => char.toLowerCase().includes(input));
+                const suggestionList = document.getElementById('suggestions');
+                if (suggestionList) {
+                    suggestionList.innerHTML = '';
+                    suggestions.forEach(char => {
+                        const li = document.createElement('li');
+                        li.textContent = char;
+                        li.onclick = function() {
+                            addCharacter(char);
+                            characterInput.value = '';
+                            suggestionList.innerHTML = '';
+                        };
+                        suggestionList.appendChild(li);
+                    });
+                }
+            });
+        } else {
+            console.error("无法找到角色输入框元素");
+        }
+
+        // 从下拉列表选择角色
+        const characterSelect = document.getElementById('characterSelect');
+        if (characterSelect) {
+            characterSelect.addEventListener('change', function(e) {
+                if (e.target.value) {
+                    addCharacter(e.target.value);
+                    e.target.value = '';
+                }
+            });
+        } else {
+            console.error("无法找到角色选择下拉框元素");
+        }
+
+        // 添加选中的角色
+        function addCharacter(character) {
+            if (!selectedCharacters.includes(character)) {
+                selectedCharacters.push(character);
+                updateSelectedCharactersList();
+            }
+        }
+
+        // 更新已选择的角色列表
+        function updateSelectedCharactersList() {
+            const list = document.getElementById('characterList');
+            if (list) {
+                list.innerHTML = '';
+                selectedCharacters.forEach(char => {
+                    const li = document.createElement('li');
+                    li.textContent = char;
+                    list.appendChild(li);
+                });
+            } else {
+                console.error("无法找到已选择角色列表元素");
+            }
+        }
+
         // 初始化
         loadDatabase();
     </script>
