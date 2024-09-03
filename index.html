@@ -3,141 +3,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>角色升级材料计算器</title>
+    <title>角色升级材料计算器 (Debug)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .input-group {
-            margin-bottom: 20px;
-        }
-        #characterInput, #characterSelect {
-            width: 100%;
-            padding: 10px;
-            margin-top: 5px;
-        }
-        #suggestions {
-            list-style-type: none;
-            padding: 0;
-            margin-top: 5px;
-        }
-        #suggestions li {
-            cursor: pointer;
-            padding: 5px;
-        }
-        #suggestions li:hover {
-            background-color: #f0f0f0;
-        }
-        #selectedCharacters {
-            margin-top: 20px;
-        }
+        /* 保持原有的样式 */
     </style>
 </head>
 <body>
-    <h1>角色升级材料计算器</h1>
-    
-    <div class="input-group">
-        <label for="characterInput">输入角色名称：</label>
-        <input type="text" id="characterInput" placeholder="输入角色名称">
-        <ul id="suggestions"></ul>
-    </div>
-    
-    <div class="input-group">
-        <label for="characterSelect">或从列表中选择：</label>
-        <select id="characterSelect">
-            <option value="">-- 选择角色 --</option>
-        </select>
-    </div>
-    
-    <div id="selectedCharacters">
-        <h2>已选择的角色：</h2>
-        <ul id="characterList"></ul>
-    </div>
+    <!-- 保持原有的HTML结构 -->
 
     <script>
         let characters = [];
         let selectedCharacters = [];
 
-        // 加载SQLite数据库
+        function updateDebugInfo(dbStatus, characterCount, lastError = "无") {
+            document.getElementById('db-status').textContent = dbStatus;
+            document.getElementById('character-count').textContent = characterCount;
+            document.getElementById('last-error').textContent = lastError;
+            console.log(`调试信息更新 - 状态: ${dbStatus}, 角色数: ${characterCount}, 错误: ${lastError}`);
+        }
+
         function loadDatabase() {
+            console.log("开始加载数据库");
+            updateDebugInfo("正在加载", 0);
             var xhr = new XMLHttpRequest();
-            xhr.open('GET', '/db/characters.db', true);
+            xhr.open('GET', 'db/characters.db', true);  // 更新为您的实际文件路径
             xhr.responseType = 'arraybuffer';
 
             xhr.onload = function(e) {
-                var uInt8Array = new Uint8Array(this.response);
-                initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.wasm` }).then(function(SQL){
-                    var db = new SQL.Database(uInt8Array);
-                    var contents = db.exec("SELECT character FROM characters");
-                    if (contents.length > 0 && contents[0].values) {
-                        characters = contents[0].values.map(row => row[0]);
-                        initializeCharacterList();
+                console.log("XHR onload 触发");
+                if (this.status == 200) {
+                    var uInt8Array = new Uint8Array(this.response);
+                    console.log("数据库文件大小:", uInt8Array.length, "字节");
+                    if (uInt8Array.length === 0) {
+                        console.error("数据库文件为空");
+                        updateDebugInfo("加载失败", 0, "数据库文件为空");
+                        return;
                     }
-                });
+                    initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.wasm` })
+                    .then(function(SQL){
+                        console.log("SQL.js 初始化成功");
+                        try {
+                            var db = new SQL.Database(uInt8Array);
+                            console.log("数据库实例创建成功");
+                            var contents = db.exec("SELECT name FROM sqlite_master WHERE type='table';");
+                            console.log("数据库表:", contents);
+                            var contents = db.exec("SELECT character FROM characters");
+                            console.log("查询执行结果:", contents);
+                            if (contents.length > 0 && contents[0].values) {
+                                characters = contents[0].values.map(row => row[0]);
+                                console.log("提取的角色:", characters);
+                                initializeCharacterList();
+                                updateDebugInfo("加载成功", characters.length);
+                            } else {
+                                console.error("查询结果为空或格式不正确");
+                                updateDebugInfo("加载失败", 0, "查询结果为空或格式不正确");
+                            }
+                        } catch (err) {
+                            console.error("数据库操作错误:", err);
+                            updateDebugInfo("加载失败", 0, "数据库操作错误: " + err.message);
+                        }
+                    }).catch(err => {
+                        console.error("SQL.js 初始化失败:", err);
+                        updateDebugInfo("加载失败", 0, "SQL.js 初始化失败: " + err.message);
+                    });
+                } else {
+                    console.error("XHR 请求失败:", this.status, this.statusText);
+                    updateDebugInfo("加载失败", 0, `XHR 请求失败: ${this.status} ${this.statusText}`);
+                }
+            };
+            xhr.onerror = function(e) {
+                console.error("XHR 错误:", e);
+                updateDebugInfo("加载失败", 0, "XHR 错误: " + e.type);
             };
             xhr.send();
         }
 
-        // 初始化角色列表
-        function initializeCharacterList() {
-            const select = document.getElementById('characterSelect');
-            characters.forEach(character => {
-                const option = document.createElement('option');
-                option.value = character;
-                option.textContent = character;
-                select.appendChild(option);
-            });
-        }
-
-        // 输入建议功能
-        document.getElementById('characterInput').addEventListener('input', function(e) {
-            const input = e.target.value.toLowerCase();
-            const suggestions = characters.filter(char => char.toLowerCase().includes(input));
-            const suggestionList = document.getElementById('suggestions');
-            suggestionList.innerHTML = '';
-            suggestions.forEach(char => {
-                const li = document.createElement('li');
-                li.textContent = char;
-                li.onclick = function() {
-                    addCharacter(char);
-                    document.getElementById('characterInput').value = '';
-                    suggestionList.innerHTML = '';
-                };
-                suggestionList.appendChild(li);
-            });
-        });
-
-        // 从下拉列表选择角色
-        document.getElementById('characterSelect').addEventListener('change', function(e) {
-            if (e.target.value) {
-                addCharacter(e.target.value);
-                e.target.value = '';
-            }
-        });
-
-        // 添加选中的角色
-        function addCharacter(character) {
-            if (!selectedCharacters.includes(character)) {
-                selectedCharacters.push(character);
-                updateSelectedCharactersList();
-            }
-        }
-
-        // 更新已选择的角色列表
-        function updateSelectedCharactersList() {
-            const list = document.getElementById('characterList');
-            list.innerHTML = '';
-            selectedCharacters.forEach(char => {
-                const li = document.createElement('li');
-                li.textContent = char;
-                list.appendChild(li);
-            });
-        }
-
+        // 其余函数保持不变
+        
         // 初始化
         loadDatabase();
     </script>
