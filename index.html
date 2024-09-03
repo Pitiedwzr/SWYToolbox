@@ -90,7 +90,7 @@
             console.log("开始加载数据库");
             updateDebugInfo("正在加载", 0);
             var xhr = new XMLHttpRequest();
-            xhr.open('GET', 'database.sqlite', true);  // 请确保这是正确的文件路径
+            xhr.open('GET', 'db/characters.db', true);  // 请确保这是正确的文件路径
             xhr.responseType = 'arraybuffer';
 
             xhr.onload = function(e) {
