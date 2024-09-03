@@ -72,7 +72,7 @@
 
         function loadDatabase() {
             var xhr = new XMLHttpRequest();
-            xhr.open('GET', 'database.sqlite', true);
+            xhr.open('GET', 'db/characters.db', true);
             xhr.responseType = 'arraybuffer';
 
             xhr.onload = function(e) {
