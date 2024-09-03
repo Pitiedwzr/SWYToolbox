@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>角色升级材料计算器</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -13,91 +13,180 @@
             padding: 20px;
         }
         .input-group {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
-        select, input {
+        #characterInput, #characterSelect {
             width: 100%;
-            padding: 5px;
+            padding: 10px;
             margin-top: 5px;
+        }
+        #suggestions {
+            list-style-type: none;
+            padding: 0;
+            margin-top: 5px;
+        }
+        #suggestions li {
+            cursor: pointer;
+            padding: 5px;
+        }
+        #suggestions li:hover {
+            background-color: #f0f0f0;
         }
         #selectedCharacters {
             margin-top: 20px;
         }
         .character-item {
-            background-color: #f0f0f0;
-            padding: 10px;
+            display: flex;
+            align-items: center;
             margin-bottom: 10px;
-            border-radius: 5px;
+        }
+        .character-item button {
+            margin-left: 10px;
         }
     </style>
 </head>
 <body>
-    <div id="app">
-        <h1>角色升级材料计算器</h1>
-        
-        <div class="input-group">
-            <label for="characterInput">输入角色名称：</label>
-            <input type="text" id="characterInput" v-model="newCharacter">
-        </div>
-
-        <div class="input-group">
-            <label for="characterSelect">或从列表中选择：</label>
-            <select id="characterSelect" v-model="selectedCharacter">
-                <option disabled value="">-- 选择角色 --</option>
-                <!-- 这里可以添加预设的角色列表 -->
-            </select>
-        </div>
-
-        <div class="input-group">
-            <label for="levelRange">选择等级区间：</label>
-            <select id="levelRange" v-model="selectedLevelRange">
-                <option value="1-20">1-20级</option>
-                <option value="21-40">21-40级</option>
-                <option value="41-60">41-60级</option>
-                <option value="61-80">61-80级</option>
-                <option value="81-100">81-100级</option>
-            </select>
-        </div>
-
-        <button @click="addCharacter">添加角色</button>
-
-        <div id="selectedCharacters">
-            <h2>已选择的角色：</h2>
-            <div v-for="(char, index) in characters" :key="index" class="character-item">
-                <p>{{ char.name }} - 等级区间：{{ char.levelRange }}</p>
-                <button @click="removeCharacter(index)">移除</button>
-            </div>
-        </div>
+    <h1>角色升级材料计算器</h1>
+    
+    <div class="input-group">
+        <label for="characterInput">输入角色名称：</label>
+        <input type="text" id="characterInput" placeholder="输入角色名称">
+        <ul id="suggestions"></ul>
+    </div>
+    
+    <div class="input-group">
+        <label for="characterSelect">或从列表中选择：</label>
+        <select id="characterSelect">
+            <option value="">-- 选择角色 --</option>
+        </select>
+    </div>
+    
+    <div id="selectedCharacters">
+        <h2>已选择的角色：</h2>
+        <ul id="characterList"></ul>
     </div>
 
     <script>
-        const app = Vue.createApp({
-            data() {
-                return {
-                    newCharacter: '',
-                    selectedCharacter: '',
-                    selectedLevelRange: '',
-                    characters: []
+        let characters = [];
+        let selectedCharacters = [];
+
+        function loadDatabase() {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', 'database.sqlite', true);
+            xhr.responseType = 'arraybuffer';
+
+            xhr.onload = function(e) {
+                if (this.status == 200) {
+                    var uInt8Array = new Uint8Array(this.response);
+                    initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.wasm` })
+                    .then(function(SQL){
+                        try {
+                            var db = new SQL.Database(uInt8Array);
+                            var contents = db.exec("SELECT character FROM characters");
+                            if (contents.length > 0 && contents[0].values) {
+                                characters = contents[0].values.map(row => row[0]);
+                                initializeCharacterList();
+                            }
+                        } catch (err) {
+                            console.error("数据库操作错误:", err);
+                        }
+                    }).catch(err => {
+                        console.error("SQL.js 初始化失败:", err);
+                    });
                 }
-            },
-            methods: {
-                addCharacter() {
-                    const characterName = this.newCharacter || this.selectedCharacter;
-                    if (characterName && this.selectedLevelRange) {
-                        this.characters.push({
-                            name: characterName,
-                            levelRange: this.selectedLevelRange
-                        });
-                        this.newCharacter = '';
-                        this.selectedCharacter = '';
-                        this.selectedLevelRange = '';
-                    }
-                },
-                removeCharacter(index) {
-                    this.characters.splice(index, 1);
-                }
+            };
+            xhr.onerror = function(e) {
+                console.error("XHR 错误:", e);
+            };
+            xhr.send();
+        }
+
+        function initializeCharacterList() {
+            const select = document.getElementById('characterSelect');
+            if (select) {
+                select.innerHTML = '<option value="">-- 选择角色 --</option>';
+                characters.forEach(character => {
+                    const option = document.createElement('option');
+                    option.value = character;
+                    option.textContent = character;
+                    select.appendChild(option);
+                });
             }
-        }).mount('#app');
+        }
+
+        function addCharacter(character) {
+            if (!selectedCharacters.some(char => char.name === character)) {
+                selectedCharacters.push({ name: character, level: 1 });
+                updateSelectedCharactersList();
+            }
+        }
+
+        function removeCharacter(character) {
+            selectedCharacters = selectedCharacters.filter(char => char.name !== character);
+            updateSelectedCharactersList();
+        }
+
+        function updateCharacterLevel(character, level) {
+            const charIndex = selectedCharacters.findIndex(char => char.name === character);
+            if (charIndex !== -1) {
+                selectedCharacters[charIndex].level = parseInt(level);
+            }
+        }
+
+        function updateSelectedCharactersList() {
+            const list = document.getElementById('characterList');
+            if (list) {
+                list.innerHTML = '';
+                selectedCharacters.forEach(char => {
+                    const li = document.createElement('li');
+                    li.className = 'character-item';
+                    li.innerHTML = `
+                        ${char.name}
+                        <select onchange="updateCharacterLevel('${char.name}', this.value)">
+                            ${[1, 20, 40, 50, 60, 70, 80, 90].map(level => 
+                                `<option value="${level}" ${char.level === level ? 'selected' : ''}>Lv${level}</option>`
+                            ).join('')}
+                        </select>
+                        <button onclick="removeCharacter('${char.name}')">删除</button>
+                    `;
+                    list.appendChild(li);
+                });
+            }
+        }
+
+        const characterInput = document.getElementById('characterInput');
+        if (characterInput) {
+            characterInput.addEventListener('input', function(e) {
+                const input = e.target.value.toLowerCase();
+                const suggestions = characters.filter(char => char.toLowerCase().includes(input));
+                const suggestionList = document.getElementById('suggestions');
+                if (suggestionList) {
+                    suggestionList.innerHTML = '';
+                    suggestions.forEach(char => {
+                        const li = document.createElement('li');
+                        li.textContent = char;
+                        li.onclick = function() {
+                            addCharacter(char);
+                            characterInput.value = '';
+                            suggestionList.innerHTML = '';
+                        };
+                        suggestionList.appendChild(li);
+                    });
+                }
+            });
+        }
+
+        const characterSelect = document.getElementById('characterSelect');
+        if (characterSelect) {
+            characterSelect.addEventListener('change', function(e) {
+                if (e.target.value) {
+                    addCharacter(e.target.value);
+                    e.target.value = '';
+                }
+            });
+        }
+
+        loadDatabase();
     </script>
 </body>
 </html>
